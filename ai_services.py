@@ -14,9 +14,9 @@ from io import BytesIO
 # 🧠 AI MODEL SEÇENEKLERİ (GÜNCEL)
 # ==========================================
 AVAILABLE_MODELS = {
-    "En Gelişmiş (Gemini 3.0 Pro)": "gemini-3.0-pro-preview-02-05", 
-    "Gelişmiş (Gemini 2.5 Pro)": "gemini-2.5-pro-001",
-    "Hızlı (Gemini 2.5 Flash)": "gemini-2.5-flash-001"
+    "Derin Araştırma": "gemini-3-pro-preview", 
+    "Gelişmiş": "gemini-2.5-pro",
+    "Hızlı": "gemini-2.5-flash"
 }
 
 def clean_bold_tags(text: str) -> str:
@@ -215,7 +215,7 @@ def run_matchmaker_batch(book_dna: dict, publishers: list, api_key: str, model_n
 
 def refine_intelligence(raw_text: str, api_key: str):
     """İstihbarat temizleme (Flash Modeli)."""
-    model = _get_model(api_key, "gemini-2.5-flash-001") 
+    model = _get_model(api_key, "gemini-2.5-flash") 
     prompt = f"GÖREV: İstihbarat Analisti. Ham veriden özet rapor çıkar.\nHAM VERİ: {raw_text}\nİSTENENLER: Puan, Sayfa Sayısı, Ödüller, Yazar Biyografisi, Hak Satışları.\nJSON Formatında ver: {{'puan': '...', 'sayfa': '...', 'oduller': '...', 'yazar': '...', 'satislar': '...', 'ozet': '...'}}"
     try:
         response = model.generate_content(prompt, generation_config=GenerationConfig(response_mime_type="application/json"))

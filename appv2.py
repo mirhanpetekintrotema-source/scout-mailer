@@ -5,14 +5,12 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
 import json
-import os
-import re
 import requests
 import gspread
 import fitz  # PyMuPDF
-import io 
+import io
 import matplotlib.pyplot as plt
 from google.oauth2.service_account import Credentials
 from ai_services import analyze_book_dna, run_matchmaker_batch, run_drafter, refine_intelligence, create_one_pager, AVAILABLE_MODELS
@@ -22,7 +20,7 @@ st.set_page_config(page_title="Scout's Pro Mailer - AI", page_icon="🛡️", la
 
 st.markdown("""
 <style>
-    @import url('[https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap](https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap)');
+    @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap');
     html, body, [class*="css"] { font-family: 'Roboto', sans-serif !important; }
     .block-container { padding-top: 1.5rem !important; max-width: 99% !important; }
     
@@ -71,13 +69,14 @@ try:
     GMAIL_USER = st.secrets["email"]["user"]
     GMAIL_PASS = st.secrets["email"]["pass"]
     sheets_info = st.secrets["google_sheets"]
-    CREDS = Credentials.from_service_account_info(sheets_info, scopes=["[https://www.googleapis.com/auth/spreadsheets](https://www.googleapis.com/auth/spreadsheets)", "[https://www.googleapis.com/auth/drive](https://www.googleapis.com/auth/drive)"])
+    CREDS = Credentials.from_service_account_info(sheets_info, scopes=["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"])
     CLIENT = gspread.authorize(CREDS)
 except Exception as e:
     st.error(f"⚠️ API Hatası: {str(e)}")
     st.stop()
 
-GOOGLE_SHEET_NAME = "Yayınevi Öneri Anketi (Yanıtlar)"
+# --- KRİTİK DEĞİŞİKLİK: ARTIK İSİM DEĞİL ID KULLANIYORUZ ---
+GOOGLE_SHEET_KEY = "13a7UWJZJAd2Q5sf8Oebf98oNgeIXLCbDF9D4ESSgSqE" 
 WORK_EMAIL = "mirhan.petek@introtema.com"
 
 try: from streamlit_quill import st_quill
@@ -90,15 +89,27 @@ for key, val in default_states.items():
 
 # --- FONKSİYONLAR ---
 def get_logs_sheet():
+    """
+    Logs sekmesini ID ile bulur. Yoksa OTOMATİK OLUŞTURUR.
+    """
     try:
-        sh = CLIENT.open(GOOGLE_SHEET_NAME)
-        try: return sh.worksheet("Logs")
-        except: return None
-    except: return None
+        # İSİM YERİNE KEY İLE AÇIYORUZ (KESİN ÇÖZÜM)
+        sh = CLIENT.open_by_key(GOOGLE_SHEET_KEY)
+        try:
+            return sh.worksheet("Logs")
+        except:
+            # Sekme yoksa oluştur
+            wks = sh.add_worksheet(title="Logs", rows="1000", cols="6")
+            # Başlıkları yaz
+            wks.append_row(["Tarih", "Kitap", "Yayınevleri", "Hak Sahibi", "Durum", "Kaynak"])
+            return wks
+    except Exception as e:
+        st.error(f"Google Sheet Bağlantı Hatası (ID Kontrol): {str(e)}")
+        return None
 
 def get_publisher_data():
     try:
-        sh = CLIENT.open(GOOGLE_SHEET_NAME)
+        sh = CLIENT.open_by_key(GOOGLE_SHEET_KEY) # ID KULLANIMI
         sheet = sh.get_worksheet(0)
         raw_data = sheet.get_all_records()
         clean_data = []
@@ -123,7 +134,7 @@ def extract_text_from_pdf(file):
 def firecrawl_scrape(url):
     try:
         headers = {"Authorization": f"Bearer {FIRECRAWL_KEY}"}
-        res = requests.post("[https://api.firecrawl.dev/v0/scrape](https://api.firecrawl.dev/v0/scrape)", json={"url": url, "pageOptions": {"onlyMainContent": True}}, headers=headers)
+        res = requests.post("https://api.firecrawl.dev/v0/scrape", json={"url": url, "pageOptions": {"onlyMainContent": True}}, headers=headers)
         if res.status_code == 200: return res.json().get("data", {}).get("markdown", "")
         return ""
     except: return ""
@@ -171,7 +182,6 @@ def send_email_smtp(to_list, cc_list, subject, html_body, reply_to, attachments=
 st.title("🛡️ Scout's Pro Mailer - AI (V2.0)")
 
 # --- DASHBOARD (PATRON EKRANI) ---
-# Burayı genişletilebilir (expander) yaptık ki her seferinde yer kaplamasın
 with st.expander("📊 Operasyon Paneli (Dashboard)", expanded=False):
     logs_sheet = get_logs_sheet()
     if logs_sheet:
@@ -181,16 +191,15 @@ with st.expander("📊 Operasyon Paneli (Dashboard)", expanded=False):
                 k1, k2, k3 = st.columns(3)
                 k1.metric("Toplam Gönderim", len(df_logs))
                 
-                # 30 Günlük Sessizlik Kontrolü (Basit Versiyon)
+                # 30 Günlük Sessizlik Kontrolü
                 try:
                     last_dates = df_logs.groupby("Yayınevleri")["Tarih"].max()
-                    # (Burada tarih parsing vb. gerekebilir, şimdilik basit tutuyoruz)
                 except: pass
             else:
                 st.info("Henüz log kaydı yok.")
         except: st.warning("Log verisi okunamadı.")
     else:
-        st.error("Google Sheets'te 'Logs' sekmesi bulunamadı.")
+        st.error("Google Sheets bağlantısı kurulamadı.")
 
 col_brain, col_hands = st.columns([40, 60])
 
@@ -201,9 +210,9 @@ with col_brain:
     # 1. AYARLAR
     with st.expander("⚙️ Motor Ayarları"):
         model_options = list(AVAILABLE_MODELS.keys())
-        sel_dna = st.selectbox("DNA Modeli", model_options, index=0) # Gemini 3.0 Varsayılan
-        sel_match = st.selectbox("Eşleştirme Modeli", model_options, index=2) # Flash (Hız için)
-        sel_draft = st.selectbox("Yazar Modeli", model_options, index=1) # 2.5 Pro (Denge)
+        sel_dna = st.selectbox("DNA Modeli", model_options, index=0) 
+        sel_match = st.selectbox("Eşleştirme Modeli", model_options, index=2) 
+        sel_draft = st.selectbox("Yazar Modeli", model_options, index=1)
         MODEL_DNA = AVAILABLE_MODELS[sel_dna]
         MODEL_MATCH = AVAILABLE_MODELS[sel_match]
         MODEL_DRAFT = AVAILABLE_MODELS[sel_draft]
@@ -286,17 +295,17 @@ with col_brain:
                 sel_depts = st.multiselect("Hedef Kategoriler", all_depts, default=all_depts)
                 
                 if st.button("Filtrele ve Başlat"): # İç içe buton sorunu olmaması için logic değişti, ama şimdilik direct run
-                    pass # (Streamlit'te iç içe buton olmaz, o yüzden aşağıya taşıyacağız)
+                    pass 
 
-    # EŞLEŞTİRME LOGIC (Buton dışına taşıdık)
+    # EŞLEŞTİRME LOGIC
     if st.session_state.book_dna and st.session_state.get('start_match', False):
-        pass # Burası karmaşıklaşmasın, eski basit mantığı koruyalım
+        pass 
 
 # SAĞ PANEL (OPERASYON)
 with col_hands:
     st.subheader("📧 Operasyon Merkezi")
     
-    # ONE-PAGER İNDİRME BUTONU (Eğer veri varsa)
+    # ONE-PAGER İNDİRME BUTONU
     if st.session_state.book_dna and st.session_state.intel_data:
         docx_file = create_one_pager(st.session_state.book_dna, st.session_state.intel_data, cover_img)
         st.download_button(
@@ -309,17 +318,12 @@ with col_hands:
     # Excel Yükleme
     list_file = st.file_uploader("Liste (Excel)", type="xlsx")
     
-    # ... (Buradan sonrası eski kodun aynısı: Excel okuma, Editör, Gönderim) ...
-    # Sadece Loglama kısımları 'check_master_log_cloud' ile değişti.
-    # KODUN DEVAMINI BURAYA EKLİYORUM (Yer Tasarrufu İçin Özetlemedim, Tamamını Yapıştır)
-    
     final_list = pd.DataFrame()
     if list_file:
         xl = pd.ExcelFile(list_file)
         sheet = st.selectbox("Sayfa", xl.sheet_names)
         if sheet:
             df = pd.read_excel(list_file, sheet_name=sheet)
-            # ... (Kolon bulma mantığı aynı) ...
             cols = df.columns.tolist()
             def find_col(kws, idx):
                 for k in kws: 
@@ -338,8 +342,11 @@ with col_hands:
             st.session_state.df_main = edited
             final_list = st.session_state.df_main[st.session_state.df_main["Gönder?"]==True]
 
+            if not final_list.empty: st.success(f"✅ {len(final_list)} alıcı seçildi.")
+            else: st.warning("Alıcı seçilmedi")
+
     st.divider()
-    # MANUEL GİRİŞLER (Sıfır Hata için burası manuel)
+    # MANUEL GİRİŞLER
     email_subject = st.text_input("Konu Başlığı", value=st.session_state.subject_val)
     kitap_adi_log = st.text_input("Kitap Adı (Log İçin)", value=st.session_state.book_val)
     hak_mail = st.text_input("Hak Sahibi Email")
