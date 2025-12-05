@@ -1,0 +1,12 @@
+streamlit
+pandas
+google-generativeai
+python-docx
+gspread
+google-auth
+PyMuPDF
+matplotlib
+requests
+streamlit-quill
+openpyxl
+xlsxwriter
